@@ -1,0 +1,143 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const jsx_runtime_1 = require("react/jsx-runtime");
+const react_1 = require("react");
+const material_1 = require("@mui/material");
+const icons_material_1 = require("@mui/icons-material");
+const react_dropzone_1 = require("react-dropzone");
+const react_toastify_1 = require("react-toastify");
+const StatsCards_1 = __importDefault(require("./StatsCards"));
+const ClientsList_1 = __importDefault(require("./ClientsList"));
+const MessagePreview_1 = __importDefault(require("./MessagePreview"));
+const Settings_1 = __importDefault(require("./Settings"));
+const LogsViewer_1 = __importDefault(require("./LogsViewer"));
+function TabPanel(props) {
+    const { children, value, index, ...other } = props;
+    return ((0, jsx_runtime_1.jsx)("div", { role: "tabpanel", hidden: value !== index, id: `tabpanel-${index}`, "aria-labelledby": `tab-${index}`, ...other, children: value === index && (0, jsx_runtime_1.jsx)(material_1.Box, { sx: { p: 3 }, children: children }) }));
+}
+const Dashboard = () => {
+    const [tabValue, setTabValue] = (0, react_1.useState)(0);
+    const [drawerOpen, setDrawerOpen] = (0, react_1.useState)(false);
+    const [isProcessing, setIsProcessing] = (0, react_1.useState)(false);
+    const [progress, setProgress] = (0, react_1.useState)(0);
+    const [progressMessage, setProgressMessage] = (0, react_1.useState)('');
+    const [clients, setClients] = (0, react_1.useState)([]);
+    const [selectedClient, setSelectedClient] = (0, react_1.useState)(null);
+    const [stats, setStats] = (0, react_1.useState)({
+        total: 0,
+        enviados: 0,
+        fallidos: 0,
+        pendientes: 0
+    });
+    const [snackbar, setSnackbar] = (0, react_1.useState)({
+        open: false,
+        message: '',
+        severity: 'info'
+    });
+    // Dropzone para Excel
+    const { getRootProps, getInputProps, isDragActive } = (0, react_dropzone_1.useDropzone)({
+        accept: {
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+            'application/vnd.ms-excel': ['.xls']
+        },
+        onDrop: async (files) => {
+            if (files.length > 0) {
+                const file = files[0];
+                // Enviar al proceso principal para importar
+                if (window.electronAPI) {
+                    // Simular importación
+                    react_toastify_1.toast.info(`Importando archivo: ${file.name}`);
+                    // Aquí se implementaría la lógica real de importación
+                }
+            }
+        }
+    });
+    // Cargar datos iniciales
+    (0, react_1.useEffect)(() => {
+        if (window.electronAPI) {
+            // Escuchar eventos del main
+            window.electronAPI.on('import-complete', (data) => {
+                setClients(data.clientes);
+                setStats(prev => ({
+                    ...prev,
+                    total: data.clientes.length,
+                    pendientes: data.clientes.length
+                }));
+                react_toastify_1.toast.success(`Archivo ${data.fileName} importado correctamente`);
+            });
+            window.electronAPI.on('send-progress', (data) => {
+                setIsProcessing(true);
+                setProgress(data.progress || 0);
+                setProgressMessage(data.message || 'Procesando...');
+            });
+            window.electronAPI.on('send-complete', (data) => {
+                setIsProcessing(false);
+                setProgress(100);
+                setStats(prev => ({
+                    ...prev,
+                    enviados: data.enviados,
+                    fallidos: data.fallidos,
+                    pendientes: data.total - data.enviados
+                }));
+                react_toastify_1.toast.success(`Envío completado: ${data.enviados} enviados, ${data.fallidos} fallidos`);
+            });
+            // Menú actions
+            window.electronAPI.on('menu-import-excel', () => {
+                // Simular click en el dropzone
+                const fileInput = document.querySelector('input[type="file"]');
+                fileInput?.click();
+            });
+            window.electronAPI.on('menu-send-citas', () => {
+                handleSendCitas();
+            });
+            window.electronAPI.on('menu-send-vacunas', () => {
+                handleSendVacunas();
+            });
+        }
+        return () => {
+            // Limpiar listeners
+        };
+    }, []);
+    const handleSendCitas = async () => {
+        if (window.electronAPI) {
+            window.electronAPI.send('send-citas', {
+                excelPath: process.env.EXCEL_AGENDAS_PATH
+            });
+        }
+    };
+    const handleSendVacunas = async () => {
+        if (window.electronAPI) {
+            window.electronAPI.send('send-vacunas', {
+                excelPath: process.env.EXCEL_MP_PATH
+            });
+        }
+    };
+    const handleRefresh = () => {
+        if (window.electronAPI) {
+            window.electronAPI.send('get-logs');
+        }
+        react_toastify_1.toast.info('Actualizando...');
+    };
+    return ((0, jsx_runtime_1.jsxs)(material_1.Box, { sx: { display: 'flex', height: '100vh', overflow: 'hidden' }, children: [(0, jsx_runtime_1.jsx)(material_1.AppBar, { position: "fixed", sx: { zIndex: (theme) => theme.zIndex.drawer + 1 }, children: (0, jsx_runtime_1.jsxs)(material_1.Toolbar, { children: [(0, jsx_runtime_1.jsx)(material_1.IconButton, { color: "inherit", edge: "start", onClick: () => setDrawerOpen(true), sx: { mr: 2 }, children: (0, jsx_runtime_1.jsx)(icons_material_1.Menu, {}) }), (0, jsx_runtime_1.jsx)(icons_material_1.WhatsApp, { sx: { mr: 2 } }), (0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "h6", noWrap: true, component: "div", sx: { flexGrow: 1 }, children: "WhatsApp Reminder System" }), (0, jsx_runtime_1.jsx)(material_1.Badge, { badgeContent: stats.pendientes, color: "error", children: (0, jsx_runtime_1.jsx)(icons_material_1.Notifications, { sx: { mr: 2 } }) }), (0, jsx_runtime_1.jsx)(material_1.Tooltip, { title: "Actualizar", children: (0, jsx_runtime_1.jsx)(material_1.IconButton, { color: "inherit", onClick: handleRefresh, children: (0, jsx_runtime_1.jsx)(icons_material_1.Refresh, {}) }) })] }) }), (0, jsx_runtime_1.jsx)(material_1.Drawer, { anchor: "left", open: drawerOpen, onClose: () => setDrawerOpen(false), children: (0, jsx_runtime_1.jsxs)(material_1.Box, { sx: { width: 250, mt: 8 }, children: [(0, jsx_runtime_1.jsxs)(material_1.List, { children: [(0, jsx_runtime_1.jsxs)(material_1.ListItem, { button: true, selected: tabValue === 0, onClick: () => { setTabValue(0); setDrawerOpen(false); }, children: [(0, jsx_runtime_1.jsx)(material_1.ListItemIcon, { children: (0, jsx_runtime_1.jsx)(icons_material_1.Dashboard, {}) }), (0, jsx_runtime_1.jsx)(material_1.ListItemText, { primary: "Dashboard" })] }), (0, jsx_runtime_1.jsxs)(material_1.ListItem, { button: true, selected: tabValue === 1, onClick: () => { setTabValue(1); setDrawerOpen(false); }, children: [(0, jsx_runtime_1.jsx)(material_1.ListItemIcon, { children: (0, jsx_runtime_1.jsx)(icons_material_1.People, {}) }), (0, jsx_runtime_1.jsx)(material_1.ListItemText, { primary: "Clientes" })] }), (0, jsx_runtime_1.jsxs)(material_1.ListItem, { button: true, selected: tabValue === 2, onClick: () => { setTabValue(2); setDrawerOpen(false); }, children: [(0, jsx_runtime_1.jsx)(material_1.ListItemIcon, { children: (0, jsx_runtime_1.jsx)(icons_material_1.Message, {}) }), (0, jsx_runtime_1.jsx)(material_1.ListItemText, { primary: "Mensajes" })] }), (0, jsx_runtime_1.jsxs)(material_1.ListItem, { button: true, selected: tabValue === 3, onClick: () => { setTabValue(3); setDrawerOpen(false); }, children: [(0, jsx_runtime_1.jsx)(material_1.ListItemIcon, { children: (0, jsx_runtime_1.jsx)(icons_material_1.History, {}) }), (0, jsx_runtime_1.jsx)(material_1.ListItemText, { primary: "Logs" })] })] }), (0, jsx_runtime_1.jsx)(material_1.Divider, {}), (0, jsx_runtime_1.jsx)(material_1.List, { children: (0, jsx_runtime_1.jsxs)(material_1.ListItem, { button: true, selected: tabValue === 4, onClick: () => { setTabValue(4); setDrawerOpen(false); }, children: [(0, jsx_runtime_1.jsx)(material_1.ListItemIcon, { children: (0, jsx_runtime_1.jsx)(icons_material_1.Settings, {}) }), (0, jsx_runtime_1.jsx)(material_1.ListItemText, { primary: "Configuraci\u00F3n" })] }) })] }) }), (0, jsx_runtime_1.jsx)(material_1.Box, { component: "main", sx: {
+                    flexGrow: 1,
+                    pt: 8,
+                    height: '100vh',
+                    overflow: 'auto',
+                    bgcolor: 'background.default'
+                }, children: (0, jsx_runtime_1.jsxs)(material_1.Container, { maxWidth: "xl", sx: { py: 3 }, children: [(0, jsx_runtime_1.jsx)(StatsCards_1.default, { stats: stats }), (0, jsx_runtime_1.jsxs)(material_1.Paper, { sx: { p: 3, mb: 3, mt: 3 }, ...getRootProps(), children: [(0, jsx_runtime_1.jsx)("input", { ...getInputProps() }), (0, jsx_runtime_1.jsxs)(material_1.Box, { sx: { textAlign: 'center' }, children: [(0, jsx_runtime_1.jsx)(icons_material_1.CloudUpload, { sx: { fontSize: 48, color: '#25D366', mb: 2 } }), (0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "h6", children: isDragActive ? 'Suelta el archivo aquí' : 'Arrastra o haz clic para importar Excel' }), (0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "body2", color: "textSecondary", children: "Soporta archivos .xlsx y .xls" })] })] }), isProcessing && ((0, jsx_runtime_1.jsxs)(material_1.Box, { sx: { mb: 3 }, children: [(0, jsx_runtime_1.jsx)(material_1.LinearProgress, { variant: "determinate", value: progress }), (0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "body2", color: "textSecondary", sx: { mt: 1 }, children: progressMessage })] })), (0, jsx_runtime_1.jsxs)(material_1.Tabs, { value: tabValue, onChange: (e, v) => setTabValue(v), sx: { mb: 3 }, children: [(0, jsx_runtime_1.jsx)(material_1.Tab, { label: "Dashboard" }), (0, jsx_runtime_1.jsx)(material_1.Tab, { label: `Clientes (${stats.total})` }), (0, jsx_runtime_1.jsx)(material_1.Tab, { label: "Mensajes" }), (0, jsx_runtime_1.jsx)(material_1.Tab, { label: "Logs" }), (0, jsx_runtime_1.jsx)(material_1.Tab, { label: "Configuraci\u00F3n" })] }), (0, jsx_runtime_1.jsx)(TabPanel, { value: tabValue, index: 0, children: (0, jsx_runtime_1.jsxs)(material_1.Grid, { container: true, spacing: 3, children: [(0, jsx_runtime_1.jsx)(material_1.Grid, { item: true, xs: 12, md: 6, children: (0, jsx_runtime_1.jsxs)(material_1.Paper, { sx: { p: 3 }, children: [(0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "h6", gutterBottom: true, children: "Acciones R\u00E1pidas" }), (0, jsx_runtime_1.jsxs)(material_1.Box, { sx: { display: 'flex', flexDirection: 'column', gap: 2 }, children: [(0, jsx_runtime_1.jsx)(material_1.Button, { variant: "contained", color: "primary", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Send, {}), onClick: handleSendCitas, disabled: isProcessing, fullWidth: true, children: "Enviar Recordatorios de Citas" }), (0, jsx_runtime_1.jsx)(material_1.Button, { variant: "contained", color: "secondary", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Send, {}), onClick: handleSendVacunas, disabled: isProcessing, fullWidth: true, children: "Enviar Recordatorios de Vacunas" }), (0, jsx_runtime_1.jsx)(material_1.Button, { variant: "outlined", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Download, {}), onClick: () => {
+                                                                if (window.electronAPI) {
+                                                                    window.electronAPI.send('export-report', { clientes: clients });
+                                                                }
+                                                            }, disabled: clients.length === 0, fullWidth: true, children: "Exportar Reporte" })] })] }) }), (0, jsx_runtime_1.jsx)(material_1.Grid, { item: true, xs: 12, md: 6, children: (0, jsx_runtime_1.jsxs)(material_1.Paper, { sx: { p: 3 }, children: [(0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "h6", gutterBottom: true, children: "Resumen de Env\u00EDos" }), (0, jsx_runtime_1.jsxs)(material_1.Box, { sx: { display: 'flex', justifyContent: 'space-around', py: 2 }, children: [(0, jsx_runtime_1.jsxs)(material_1.Box, { textAlign: "center", children: [(0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "h4", color: "success.main", children: stats.enviados }), (0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "body2", children: "Enviados" })] }), (0, jsx_runtime_1.jsxs)(material_1.Box, { textAlign: "center", children: [(0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "h4", color: "error.main", children: stats.fallidos }), (0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "body2", children: "Fallidos" })] }), (0, jsx_runtime_1.jsxs)(material_1.Box, { textAlign: "center", children: [(0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "h4", color: "warning.main", children: stats.pendientes }), (0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "body2", children: "Pendientes" })] })] })] }) }), (0, jsx_runtime_1.jsx)(material_1.Grid, { item: true, xs: 12, children: (0, jsx_runtime_1.jsxs)(material_1.Paper, { sx: { p: 3 }, children: [(0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "h6", gutterBottom: true, children: "\u00DAltimos Clientes Procesados" }), (0, jsx_runtime_1.jsx)(ClientsList_1.default, { clients: clients.slice(0, 10), onSelect: setSelectedClient })] }) })] }) }), (0, jsx_runtime_1.jsx)(TabPanel, { value: tabValue, index: 1, children: (0, jsx_runtime_1.jsx)(material_1.Paper, { sx: { p: 3 }, children: (0, jsx_runtime_1.jsx)(ClientsList_1.default, { clients: clients, onSelect: setSelectedClient }) }) }), (0, jsx_runtime_1.jsx)(TabPanel, { value: tabValue, index: 2, children: (0, jsx_runtime_1.jsxs)(material_1.Grid, { container: true, spacing: 3, children: [(0, jsx_runtime_1.jsx)(material_1.Grid, { item: true, xs: 12, md: 4, children: (0, jsx_runtime_1.jsxs)(material_1.Paper, { sx: { p: 3 }, children: [(0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "h6", gutterBottom: true, children: "Clientes" }), (0, jsx_runtime_1.jsx)(ClientsList_1.default, { clients: clients, onSelect: setSelectedClient, selectedId: selectedClient?.nombre })] }) }), (0, jsx_runtime_1.jsx)(material_1.Grid, { item: true, xs: 12, md: 8, children: (0, jsx_runtime_1.jsxs)(material_1.Paper, { sx: { p: 3, minHeight: 400 }, children: [(0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "h6", gutterBottom: true, children: "Previsualizaci\u00F3n de Mensaje" }), selectedClient ? ((0, jsx_runtime_1.jsx)(MessagePreview_1.default, { client: selectedClient })) : ((0, jsx_runtime_1.jsx)(material_1.Typography, { color: "textSecondary", align: "center", sx: { mt: 8 }, children: "Selecciona un cliente para ver sus mensajes" }))] }) })] }) }), (0, jsx_runtime_1.jsx)(TabPanel, { value: tabValue, index: 3, children: (0, jsx_runtime_1.jsx)(LogsViewer_1.default, {}) }), (0, jsx_runtime_1.jsx)(TabPanel, { value: tabValue, index: 4, children: (0, jsx_runtime_1.jsx)(Settings_1.default, {}) })] }) }), clients.length > 0 && !isProcessing && ((0, jsx_runtime_1.jsx)(material_1.Tooltip, { title: "Enviar mensajes", children: (0, jsx_runtime_1.jsx)(material_1.Fab, { color: "primary", sx: { position: 'fixed', bottom: 32, right: 32 }, onClick: () => {
+                        if (window.electronAPI) {
+                            window.electronAPI.send('send-citas', {});
+                        }
+                    }, children: (0, jsx_runtime_1.jsx)(icons_material_1.Send, {}) }) })), (0, jsx_runtime_1.jsx)(material_1.Snackbar, { open: snackbar.open, autoHideDuration: 6000, onClose: () => setSnackbar({ ...snackbar, open: false }), children: (0, jsx_runtime_1.jsx)(material_1.Alert, { severity: snackbar.severity, sx: { width: '100%' }, children: snackbar.message }) })
+            // Botones de prueba de simulación
+            , "// Botones de prueba de simulaci\u00F3n", (0, jsx_runtime_1.jsx)(material_1.Button, { variant: "outlined", color: "warning", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Science, {}), onClick: () => window.electronAPI?.send('simulate-citas', {}), disabled: isProcessing, fullWidth: true, children: "\uD83D\uDD2C SIMULAR Citas" }), (0, jsx_runtime_1.jsx)(material_1.Button, { variant: "outlined", color: "warning", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Science, {}), onClick: () => window.electronAPI?.send('simulate-vacunas', {}), disabled: isProcessing, fullWidth: true, children: "\uD83D\uDD2C SIMULAR Vacunas" })] }));
+};
+exports.default = Dashboard;
+//# sourceMappingURL=Dashboard.js.map

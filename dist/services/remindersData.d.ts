@@ -1,0 +1,30 @@
+import { Cliente } from '../types/reminders';
+declare class RemindersData {
+    private nombreClinica;
+    constructor(nombreClinica: string);
+    private readonly serviciosMap;
+    procesarDatos(datos: any[][], tipo: 'vacunas' | 'citas'): Cliente[];
+    private procesarVacunas;
+    private prepareClientsVacunas;
+    private generateMessagesVacunas;
+    private listReminders;
+    private listTypes;
+    private procesarCitas;
+    private prepareClientsCitas;
+    private generateMessagesCitas;
+    private procesarServicio;
+    private procesarServicioEstetica;
+    private procesarTextoGenerico;
+    private combinarServicios;
+    private listarCitasParaMascota;
+    private describirCita;
+    private construirDescripcionCita;
+    private extraerNombreClinica;
+    private createNewMsg;
+    private formatString;
+    private formatNumbers;
+    private formatDateLong;
+    private esManana;
+    private formatFechaParaMensaje;
+}
+export default RemindersData;

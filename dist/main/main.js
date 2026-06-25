@@ -37,6 +37,22 @@ const electron_1 = require("electron");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const ipcHandlers_1 = require("./ipcHandlers");
+const dotenv = __importStar(require("dotenv"));
+console.log('🔍 Cargando .env...');
+const envPath = path.join(__dirname, '../../.env');
+console.log('📄 Ruta del .env:', envPath);
+const result = dotenv.config({ path: envPath });
+if (result.error) {
+    console.error('❌ Error cargando .env:', result.error);
+}
+else {
+    console.log('✅ .env cargado correctamente');
+    console.log('📋 Variables cargadas:');
+    console.log('   NOMBRE_CLINICA:', process.env.NOMBRE_CLINICA);
+    console.log('   EXCEL_AGENDAS_PATH:', process.env.EXCEL_AGENDAS_PATH);
+    console.log('   EXCEL_MP_PATH:', process.env.EXCEL_MP_PATH);
+    console.log('   WHATSAPP_PHONE_NUMBER_ID:', process.env.WHATSAPP_PHONE_NUMBER_ID ? '****' : 'No definido');
+}
 // Configurar handlers IPC
 (0, ipcHandlers_1.setupIPCHandlers)();
 let mainWindow = null;

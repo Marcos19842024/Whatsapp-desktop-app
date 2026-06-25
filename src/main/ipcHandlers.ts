@@ -7,6 +7,11 @@ import RemindersData from '../services/remindersData';
 
 let isProcessing = false;
 
+console.log('🔍 ipcHandlers - Variables de entorno:');
+console.log('   NOMBRE_CLINICA:', process.env.NOMBRE_CLINICA);
+console.log('   EXCEL_AGENDAS_PATH:', process.env.EXCEL_AGENDAS_PATH);
+console.log('   EXCEL_MP_PATH:', process.env.EXCEL_MP_PATH);
+
 export function setupIPCHandlers() {
   
   // ============================================
@@ -393,6 +398,7 @@ export function setupIPCHandlers() {
   // 9. OBTENER CONFIGURACIÓN
   // ============================================
   ipcMain.on('get-config', (event) => {
+    console.log('📤 Enviando configuración al frontend...');
     const config = {
       nombreClinica: process.env.NOMBRE_CLINICA || 'Clínica Veterinaria',
       apiUrl: process.env.WHATSAPP_API_URL || 'https://graph.facebook.com/v18.0',
@@ -401,6 +407,7 @@ export function setupIPCHandlers() {
       waitBetween: parseInt(process.env.WAIT_BETWEEN_MESSAGES || '2000'),
       maxRetries: parseInt(process.env.MAX_RETRIES || '3')
     };
+    console.log('📋 Configuración enviada:', config);
     event.reply('config-loaded', config);
   });
 

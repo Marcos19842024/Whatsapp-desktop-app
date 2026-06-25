@@ -54,6 +54,11 @@ module.exports = {
           from: 'src/renderer/assets',
           to: 'assets',
           noErrorOnMissing: true
+        },
+        { 
+          from: '.env',
+          to: '../.env',
+          noErrorOnMissing: true
         }
       ]
     })

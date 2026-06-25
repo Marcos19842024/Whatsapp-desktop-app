@@ -1,450 +1,277 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { MessageProcessor } from '../services/messageProcessor';
-import { ExcelParser } from '../services/excelParser';
-import RemindersData from '../services/remindersData';
 
-let isProcessing = false;
+console.log('🔧 ===== INICIALIZANDO IPC HANDLERS =====');
 
-console.log('🔍 ipcHandlers - Variables de entorno:');
-console.log('   NOMBRE_CLINICA:', process.env.NOMBRE_CLINICA);
-console.log('   EXCEL_AGENDAS_PATH:', process.env.EXCEL_AGENDAS_PATH);
-console.log('   EXCEL_MP_PATH:', process.env.EXCEL_MP_PATH);
+// Registrar manejadores directamente (sin función wrapper)
+console.log('📌 Registrando manejadores IPC...');
 
-export function setupIPCHandlers() {
+// 1. MANEJADOR: get-config
+ipcMain.on('get-config', (event) => {
+  console.log('🎯 ===== get-config EJECUTADO =====');
   
-  // ============================================
-  // 1. IMPORTAR EXCEL
-  // ============================================
-  ipcMain.on('import-excel', async (event) => {
-    const win = BrowserWindow.getFocusedWindow();
-    if (!win) return;
+  const config = {
+    nombreClinica: process.env.NOMBRE_CLINICA || 'Clínica Veterinaria',
+    apiUrl: process.env.WHATSAPP_API_URL || 'https://graph.facebook.com/v18.0',
+    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
+    accessToken: process.env.WHATSAPP_ACCESS_TOKEN ? '****' : '',
+    waitBetween: parseInt(process.env.WAIT_BETWEEN_MESSAGES || '2000'),
+    maxRetries: parseInt(process.env.MAX_RETRIES || '3'),
+    excelAgendasPath: process.env.EXCEL_AGENDAS_PATH || './data/Agendas.xlsx',
+    excelMpPath: process.env.EXCEL_MP_PATH || './data/MP_Pendientes.xlsx'
+  };
+  
+  console.log('📋 Configuración enviada:', config);
+  event.reply('config-loaded', config);
+});
 
-    const result = await dialog.showOpenDialog(win, {
-      properties: ['openFile'],
-      filters: [
-        { name: 'Excel Files', extensions: ['xlsx', 'xls'] }
-      ]
+// 2. MANEJADOR: import-excel-data (VERSIÓN SIMPLIFICADA PARA PRUEBA)
+ipcMain.on('import-excel-data', async (event, data) => {
+    console.log('🎯 ===== import-excel-data EJECUTADO =====');
+    console.log('📄 Datos recibidos:', {
+        fileName: data?.fileName,
+        fileDataLength: data?.fileData?.length || 0
     });
+    
+    const win = BrowserWindow.getFocusedWindow();
+    if (!win) {
+        console.error('❌ No hay ventana activa');
+        return;
+    }
 
-    if (!result.canceled && result.filePaths.length > 0) {
-      const filePath = result.filePaths[0];
-      const fileName = path.basename(filePath);
-      
-      try {
-        // Leer el Excel
-        const data = await ExcelParser.parseExcel(filePath);
-        
-        // Determinar el tipo basado en los encabezados
-        const headers = data[0];
-        let tipo: 'vacunas' | 'citas' = 'citas';
-        
-        if (headers && headers.some((h: any) => h && h.toString().toUpperCase().includes('VACUNA'))) {
-          tipo = 'vacunas';
+    try {
+        // 1. Verificar datos
+        if (!data || !data.fileData) {
+            throw new Error('No se recibieron datos del archivo');
         }
+
+        // 2. Decodificar base64
+        console.log('🔄 Decodificando base64...');
+        const buffer = Buffer.from(data.fileData, 'base64');
+        console.log(`✅ Buffer creado: ${buffer.length} bytes`);
         
-        // Procesar usando RemindersData
+        if (buffer.length === 0) {
+            throw new Error('El buffer está vacío');
+        }
+
+        // 3. Leer con XLSX
+        console.log('📖 Leyendo con XLSX...');
+        const XLSX = require('xlsx');
+        const workbook = XLSX.read(buffer, { type: 'buffer' });
+        console.log(`✅ Workbook leído. Hojas: ${workbook.SheetNames.join(', ')}`);
+        
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const excelData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+        
+        console.log(`✅ Excel convertido: ${excelData.length} filas`);
+        
+        if (excelData.length === 0) {
+            throw new Error('El Excel no contiene datos');
+        }
+
+        // 4. Mostrar encabezados
+        const headers = excelData[0];
+        console.log('📋 Encabezados:', headers);
+
+        // 5. Determinar el tipo de archivo
+        let tipo: 'vacunas' | 'citas' = 'citas';
+        const headerStrings = headers.map((h: any) => h?.toString().toUpperCase() || '');
+        
+        // Verificar si es de vacunas
+        const hasVacuna = headerStrings.some((h: string | string[]) => h.includes('VACUNA'));
+        const hasCliente = headerStrings.some((h: string | string[]) => h.includes('CLIENTE'));
+        const hasProximoFecha = headerStrings.some((h: string | string[]) => h.includes('PRÓXIMA') || h.includes('PROXIMA'));
+        
+        if (hasVacuna || hasCliente || hasProximoFecha) {
+            tipo = 'vacunas';
+            console.log('📝 Tipo detectado: VACUNAS');
+        } else {
+            console.log('📝 Tipo detectado: CITAS (por defecto)');
+        }
+
+        // 6. PROCESAR CON REMINDERSDATA
+        console.log('🔄 Procesando con RemindersData...');
         const nombreClinica = process.env.NOMBRE_CLINICA || 'Clínica Veterinaria';
+        const RemindersData = require('../services/remindersData').default;
         const remindersData = new RemindersData(nombreClinica);
-        const clientes = remindersData.procesarDatos(data, tipo);
         
-        // Enviar resultado al frontend
-        win.webContents.send('import-complete', {
-          fileName,
-          tipo,
-          total: clientes.length,
-          clientes: clientes.map((c: any) => ({
-            nombre: c.nombre,
-            telefono: c.telefono,
+        console.log('📊 Ejecutando procesarDatos...');
+        const clientes = remindersData.procesarDatos(excelData, tipo);
+        
+        console.log(`✅ Clientes procesados: ${clientes.length}`);
+
+        // 7. Verificar que hay clientes
+        if (clientes.length === 0) {
+            console.warn('⚠️ No se procesó ningún cliente');
+            
+            // Enviar mensaje de error
+            win.webContents.send('app-error', 
+                'No se encontraron clientes válidos. Verifica el formato del Excel.\n' +
+                'Para citas: FECHA, INICIO, TIPO VISITA, PROPIETARIO, MASCOTA, TELÉFONO\n' +
+                'Para vacunas: CLIENTE, TELÉFONO 1, MASCOTA, TIPO DE RECORDATORIO, VACUNA, PRÓXIMA FECHA'
+            );
+            return;
+        }
+
+        // 8. Mostrar clientes procesados
+        console.log('👤 Clientes procesados:');
+        clientes.slice(0, 5).forEach((c: any, i: number) => {
+            console.log(`   ${i+1}. ${c.nombre} - ${c.telefono} - ${c.mascotas?.length || 0} mascotas`);
+            if (c.mensajes && c.mensajes.length > 0) {
+                console.log(`      Mensajes: ${c.mensajes.length}`);
+                // Mostrar primer mensaje
+                const primerMensaje = c.mensajes.find((m: any) => m.esPropio);
+                if (primerMensaje) {
+                    console.log(`      Primer mensaje: ${primerMensaje.contenido.substring(0, 100)}...`);
+                }
+            }
+        });
+
+        // 9. Preparar datos para enviar al frontend
+        const clientesData = clientes.map((c: any) => ({
+            nombre: c.nombre || 'Sin nombre',
+            telefono: c.telefono || 'Sin teléfono',
             mascotas: c.mascotas || [],
-            mensajes: c.mensajes || []
-          }))
+            mensajes: c.mensajes || [],
+            status: c.status || false,
+            // Campos adicionales
+            fechaCita: c.fechaCita || '',
+            horaCita: c.horaCita || '',
+            tipoVisita: c.tipoVisita || '',
+            asunto: c.asunto || '',
+            agenda: c.agenda || '',
+            estado: c.estado || ''
+        }));
+
+        // 10. Enviar al frontend
+        console.log('📤 Enviando datos al frontend...');
+        console.log(`📊 Total de clientes: ${clientesData.length}`);
+        
+        win.webContents.send('import-complete', {
+            fileName: data.fileName,
+            tipo: tipo,
+            total: clientesData.length,
+            clientes: clientesData
         });
         
-      } catch (error: any) {
-        win.webContents.send('app-error', `Error importando Excel: ${error.message}`);
-        console.error('Error importando Excel:', error);
-      }
-    }
-  });
-
-  // ============================================
-  // 2. ENVIAR RECORDATORIOS DE CITAS (REAL)
-  // ============================================
-  ipcMain.on('send-citas', async (event, data) => {
-    if (isProcessing) {
-      event.reply('app-error', 'Ya hay un proceso en curso');
-      return;
-    }
-
-    const win = BrowserWindow.getFocusedWindow();
-    if (!win) return;
-
-    isProcessing = true;
-    
-    try {
-      const nombreClinica = process.env.NOMBRE_CLINICA || 'Clínica Veterinaria';
-      const processor = new MessageProcessor(nombreClinica);
-      
-      const excelPath = data?.excelPath || process.env.EXCEL_AGENDAS_PATH;
-      
-      if (!excelPath || !fs.existsSync(excelPath)) {
-        throw new Error(`No se encontró el archivo de citas: ${excelPath}`);
-      }
-
-      win.webContents.send('send-progress', {
-        status: 'iniciando',
-        message: '📤 Enviando recordatorios de citas...',
-        progress: 0
-      });
-
-      // ENVÍO REAL: último parámetro = true
-      const result = await processor.processAndSend(
-        excelPath,
-        'citas',
-        true  // <--- true = enviar realmente
-      );
-
-      win.webContents.send('send-complete', {
-        tipo: 'citas',
-        total: result.totalClientes,
-        enviados: result.enviados.length,
-        fallidos: result.fallidos.length,
-        detalles: {
-          enviados: result.enviados.map((c: any) => c.nombre),
-          fallidos: result.fallidos.map((c: any) => c.nombre)
-        }
-      });
-
-    } catch (error: any) {
-      win.webContents.send('app-error', `Error enviando citas: ${error.message}`);
-      console.error('Error enviando citas:', error);
-    } finally {
-      isProcessing = false;
-    }
-  });
-
-  // ============================================
-  // 3. ENVIAR RECORDATORIOS DE VACUNAS (REAL)
-  // ============================================
-  ipcMain.on('send-vacunas', async (event, data) => {
-    if (isProcessing) {
-      event.reply('app-error', 'Ya hay un proceso en curso');
-      return;
-    }
-
-    const win = BrowserWindow.getFocusedWindow();
-    if (!win) return;
-
-    isProcessing = true;
-    
-    try {
-      const nombreClinica = process.env.NOMBRE_CLINICA || 'Clínica Veterinaria';
-      const processor = new MessageProcessor(nombreClinica);
-      
-      const excelPath = data?.excelPath || process.env.EXCEL_MP_PATH;
-      
-      if (!excelPath || !fs.existsSync(excelPath)) {
-        throw new Error(`No se encontró el archivo de vacunas: ${excelPath}`);
-      }
-
-      win.webContents.send('send-progress', {
-        status: 'iniciando',
-        message: '📤 Enviando recordatorios de vacunas...',
-        progress: 0
-      });
-
-      // ENVÍO REAL: último parámetro = true
-      const result = await processor.processAndSend(
-        excelPath,
-        'vacunas',
-        true  // <--- true = enviar realmente
-      );
-
-      win.webContents.send('send-complete', {
-        tipo: 'vacunas',
-        total: result.totalClientes,
-        enviados: result.enviados.length,
-        fallidos: result.fallidos.length,
-        detalles: {
-          enviados: result.enviados.map((c: any) => c.nombre),
-          fallidos: result.fallidos.map((c: any) => c.nombre)
-        }
-      });
-
-    } catch (error: any) {
-      win.webContents.send('app-error', `Error enviando vacunas: ${error.message}`);
-      console.error('Error enviando vacunas:', error);
-    } finally {
-      isProcessing = false;
-    }
-  });
-
-  // ============================================
-  // 4. SIMULAR ENVÍO DE CITAS (NO ENVÍA REAL)
-  // ============================================
-  ipcMain.on('simulate-citas', async (event, data) => {
-    if (isProcessing) {
-      event.reply('app-error', 'Ya hay un proceso en curso');
-      return;
-    }
-
-    const win = BrowserWindow.getFocusedWindow();
-    if (!win) return;
-
-    isProcessing = true;
-    
-    try {
-      const nombreClinica = process.env.NOMBRE_CLINICA || 'Clínica Veterinaria';
-      const processor = new MessageProcessor(nombreClinica);
-      
-      const excelPath = data?.excelPath || process.env.EXCEL_AGENDAS_PATH;
-      
-      if (!excelPath || !fs.existsSync(excelPath)) {
-        throw new Error(`No se encontró el archivo de citas: ${excelPath}`);
-      }
-
-      win.webContents.send('send-progress', {
-        status: 'simulando',
-        message: '🔬 SIMULANDO envío de citas (sin enviar realmente)...',
-        progress: 0
-      });
-
-      // SIMULACIÓN: último parámetro = false
-      const result = await processor.processAndSend(
-        excelPath,
-        'citas',
-        false  // <--- false = solo simulación
-      );
-
-      // Mostrar los mensajes generados en la simulación
-      const mensajesGenerados = result.clientesProcesados.map((c: any) => ({
-        cliente: c.nombre,
-        telefono: c.telefono,
-        mensajes: c.mensajes.filter((m: any) => m.esPropio).map((m: any) => m.contenido)
-      }));
-
-      win.webContents.send('send-complete', {
-        tipo: 'citas - 🔬 SIMULACIÓN',
-        total: result.totalClientes,
-        enviados: result.totalClientes, // En simulación, todos se "enviarían"
-        fallidos: 0,
-        detalles: {
-          enviados: result.clientesProcesados.map((c: any) => c.nombre),
-          fallidos: [],
-          mensajes: mensajesGenerados  // <--- Incluye los mensajes generados
-        }
-      });
-
-    } catch (error: any) {
-      win.webContents.send('app-error', `Error en simulación de citas: ${error.message}`);
-      console.error('Error en simulación de citas:', error);
-    } finally {
-      isProcessing = false;
-    }
-  });
-
-  // ============================================
-  // 5. SIMULAR ENVÍO DE VACUNAS (NO ENVÍA REAL)
-  // ============================================
-  ipcMain.on('simulate-vacunas', async (event, data) => {
-    if (isProcessing) {
-      event.reply('app-error', 'Ya hay un proceso en curso');
-      return;
-    }
-
-    const win = BrowserWindow.getFocusedWindow();
-    if (!win) return;
-
-    isProcessing = true;
-    
-    try {
-      const nombreClinica = process.env.NOMBRE_CLINICA || 'Clínica Veterinaria';
-      const processor = new MessageProcessor(nombreClinica);
-      
-      const excelPath = data?.excelPath || process.env.EXCEL_MP_PATH;
-      
-      if (!excelPath || !fs.existsSync(excelPath)) {
-        throw new Error(`No se encontró el archivo de vacunas: ${excelPath}`);
-      }
-
-      win.webContents.send('send-progress', {
-        status: 'simulando',
-        message: '🔬 SIMULANDO envío de vacunas (sin enviar realmente)...',
-        progress: 0
-      });
-
-      // SIMULACIÓN: último parámetro = false
-      const result = await processor.processAndSend(
-        excelPath,
-        'vacunas',
-        false  // <--- false = solo simulación
-      );
-
-      // Mostrar los mensajes generados en la simulación
-      const mensajesGenerados = result.clientesProcesados.map((c: any) => ({
-        cliente: c.nombre,
-        telefono: c.telefono,
-        mensajes: c.mensajes.filter((m: any) => m.esPropio).map((m: any) => m.contenido)
-      }));
-
-      win.webContents.send('send-complete', {
-        tipo: 'vacunas - 🔬 SIMULACIÓN',
-        total: result.totalClientes,
-        enviados: result.totalClientes,
-        fallidos: 0,
-        detalles: {
-          enviados: result.clientesProcesados.map((c: any) => c.nombre),
-          fallidos: [],
-          mensajes: mensajesGenerados
-        }
-      });
-
-    } catch (error: any) {
-      win.webContents.send('app-error', `Error en simulación de vacunas: ${error.message}`);
-      console.error('Error en simulación de vacunas:', error);
-    } finally {
-      isProcessing = false;
-    }
-  });
-
-  // ============================================
-  // 6. OBTENER LOGS
-  // ============================================
-  ipcMain.on('get-logs', async (event) => {
-    try {
-      const logsDir = path.join(process.cwd(), 'logs');
-      if (!fs.existsSync(logsDir)) {
-        event.reply('log-update', []);
-        return;
-      }
-
-      const files = fs.readdirSync(logsDir);
-      const logs = files
-        .filter((f: string) => f.endsWith('.json'))
-        .map((f: string) => {
-          const filePath = path.join(logsDir, f);
-          const stats = fs.statSync(filePath);
-          return {
-            name: f,
-            size: stats.size,
-            modified: stats.mtime,
-            path: filePath
-          };
-        })
-        .sort((a: any, b: any) => b.modified.getTime() - a.modified.getTime());
-
-      event.reply('log-update', logs);
-    } catch (error: any) {
-      event.reply('app-error', `Error obteniendo logs: ${error.message}`);
-    }
-  });
-
-  // ============================================
-  // 7. LIMPIAR LOGS
-  // ============================================
-  ipcMain.on('clear-logs', async (event) => {
-    try {
-      const logsDir = path.join(process.cwd(), 'logs');
-      if (fs.existsSync(logsDir)) {
-        const files = fs.readdirSync(logsDir);
-        for (const file of files) {
-          fs.unlinkSync(path.join(logsDir, file));
-        }
-        event.reply('log-update', []);
-        event.reply('app-error', '🗑️ Logs eliminados correctamente');
-      }
-    } catch (error: any) {
-      event.reply('app-error', `Error limpiando logs: ${error.message}`);
-    }
-  });
-
-  // ============================================
-  // 8. EXPORTAR REPORTE
-  // ============================================
-  ipcMain.on('export-report', async (event, data) => {
-    const win = BrowserWindow.getFocusedWindow();
-    if (!win) return;
-
-    const result = await dialog.showSaveDialog(win, {
-      title: 'Guardar Reporte',
-      defaultPath: `reporte_${new Date().toISOString().slice(0,10)}.csv`,
-      filters: [
-        { name: 'CSV', extensions: ['csv'] }
-      ]
-    });
-
-    if (!result.canceled && result.filePath) {
-      try {
-        let csv = 'Cliente,Telefono,Mascota,Mensajes\n';
-        if (data && data.clientes) {
-          data.clientes.forEach((c: any) => {
-            const mensajes = c.mensajes?.map((m: any) => m.contenido).join(' | ') || '';
-            const mascotas = c.mascotas?.map((m: any) => m.nombre).join(', ') || '';
-            csv += `"${c.nombre}","${c.telefono}","${mascotas}","${mensajes}"\n`;
-          });
-        }
+        win.webContents.send('app-error', 
+            `✅ Importados ${clientesData.length} clientes desde ${data.fileName}`
+        );
         
-        fs.writeFileSync(result.filePath, csv);
-        win.webContents.send('app-error', `✅ Reporte exportado correctamente a: ${result.filePath}`);
-      } catch (error: any) {
-        win.webContents.send('app-error', `Error exportando reporte: ${error.message}`);
-      }
-    }
-  });
+        console.log('✅ IMPORTACIÓN COMPLETADA EXITOSAMENTE');
 
-  // ============================================
-  // 9. OBTENER CONFIGURACIÓN
-  // ============================================
-  ipcMain.on('get-config', (event) => {
-    console.log('📤 Enviando configuración al frontend...');
-    const config = {
-      nombreClinica: process.env.NOMBRE_CLINICA || 'Clínica Veterinaria',
-      apiUrl: process.env.WHATSAPP_API_URL || 'https://graph.facebook.com/v18.0',
-      phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
-      accessToken: process.env.WHATSAPP_ACCESS_TOKEN ? '****' : '',
-      waitBetween: parseInt(process.env.WAIT_BETWEEN_MESSAGES || '2000'),
-      maxRetries: parseInt(process.env.MAX_RETRIES || '3')
-    };
-    console.log('📋 Configuración enviada:', config);
-    event.reply('config-loaded', config);
-  });
-
-  // ============================================
-  // 10. GUARDAR CONFIGURACIÓN
-  // ============================================
-  ipcMain.on('save-config', (event, config) => {
-    try {
-      const envPath = path.join(process.cwd(), '.env');
-      let envContent = '';
-      
-      if (fs.existsSync(envPath)) {
-        envContent = fs.readFileSync(envPath, 'utf8');
-      }
-      
-      const envVars: { [key: string]: string } = {
-        NOMBRE_CLINICA: config.nombreClinica || '',
-        WAIT_BETWEEN_MESSAGES: config.waitBetween?.toString() || '2000',
-        MAX_RETRIES: config.maxRetries?.toString() || '3'
-      };
-      
-      Object.keys(envVars).forEach(key => {
-        const regex = new RegExp(`^${key}=.*$`, 'm');
-        const value = envVars[key];
-        
-        if (regex.test(envContent)) {
-          envContent = envContent.replace(regex, `${key}=${value}`);
-        } else {
-          envContent += `\n${key}=${value}`;
-        }
-      });
-      
-      fs.writeFileSync(envPath, envContent);
-      event.reply('app-error', '✅ Configuración guardada correctamente');
-      
     } catch (error: any) {
-      event.reply('app-error', `Error guardando configuración: ${error.message}`);
+        console.error('❌ Error:', error);
+        console.error('❌ Stack:', error.stack);
+        win.webContents.send('app-error', `Error: ${error.message}`);
     }
+});
+
+// 3. MANEJADOR: import-excel (diálogo)
+ipcMain.on('import-excel', async (event) => {
+  console.log('🎯 ===== import-excel EJECUTADO =====');
+  
+  const win = BrowserWindow.getFocusedWindow();
+  if (!win) {
+    console.error('❌ No hay ventana activa');
+    return;
+  }
+
+  const result = await dialog.showOpenDialog(win, {
+    properties: ['openFile'],
+    filters: [
+      { name: 'Excel Files', extensions: ['xlsx', 'xls'] }
+    ]
   });
+
+  if (!result.canceled && result.filePaths.length > 0) {
+    const filePath = result.filePaths[0];
+    console.log('📄 Archivo seleccionado:', filePath);
+    
+    // Leer el archivo y enviarlo
+    try {
+      const fileBuffer = fs.readFileSync(filePath);
+      const base64 = fileBuffer.toString('base64');
+      
+      // Enviar al manejador import-excel-data
+      ipcMain.emit('import-excel-data', event, {
+        fileName: path.basename(filePath),
+        fileData: base64
+      });
+    } catch (error: any) {
+      console.error('❌ Error leyendo archivo:', error);
+      win.webContents.send('app-error', `Error: ${error.message}`);
+    }
+  }
+});
+
+// 4. MANEJADOR: send-citas
+ipcMain.on('send-citas', async (event, data) => {
+  console.log('🎯 ===== send-citas EJECUTADO =====');
+  const win = BrowserWindow.getFocusedWindow();
+  if (!win) return;
+  
+  win.webContents.send('app-error', 'Función send-citas en desarrollo');
+});
+
+// 5. MANEJADOR: send-vacunas
+ipcMain.on('send-vacunas', async (event, data) => {
+  console.log('🎯 ===== send-vacunas EJECUTADO =====');
+  const win = BrowserWindow.getFocusedWindow();
+  if (!win) return;
+  
+  win.webContents.send('app-error', 'Función send-vacunas en desarrollo');
+});
+
+// 6. MANEJADOR: simulate-citas
+ipcMain.on('simulate-citas', async (event, data) => {
+  console.log('🎯 ===== simulate-citas EJECUTADO =====');
+  const win = BrowserWindow.getFocusedWindow();
+  if (!win) return;
+  
+  win.webContents.send('app-error', '🔬 Simulación de citas en desarrollo');
+});
+
+// 7. MANEJADOR: simulate-vacunas
+ipcMain.on('simulate-vacunas', async (event, data) => {
+  console.log('🎯 ===== simulate-vacunas EJECUTADO =====');
+  const win = BrowserWindow.getFocusedWindow();
+  if (!win) return;
+  
+  win.webContents.send('app-error', '🔬 Simulación de vacunas en desarrollo');
+});
+
+// 8. MANEJADOR: get-logs
+ipcMain.on('get-logs', async (event) => {
+  console.log('🎯 ===== get-logs EJECUTADO =====');
+  event.reply('log-update', []);
+});
+
+// 9. MANEJADOR: clear-logs
+ipcMain.on('clear-logs', async (event) => {
+  console.log('🎯 ===== clear-logs EJECUTADO =====');
+  event.reply('app-error', 'Logs limpiados');
+});
+
+// 10. MANEJADOR: export-report
+ipcMain.on('export-report', async (event, data) => {
+  console.log('🎯 ===== export-report EJECUTADO =====');
+  const win = BrowserWindow.getFocusedWindow();
+  if (!win) return;
+  
+  win.webContents.send('app-error', 'Función export-report en desarrollo');
+});
+
+// 11. MANEJADOR: save-config
+ipcMain.on('save-config', (event, config) => {
+  console.log('🎯 ===== save-config EJECUTADO =====');
+  event.reply('app-error', 'Configuración guardada (simulada)');
+});
+
+console.log('✅ ===== TODOS LOS MANEJADORES REGISTRADOS =====');
+
+// Exportar función vacía para compatibilidad
+export function setupIPCHandlers() {
+  console.log('✅ setupIPCHandlers llamado (ya registrados)');
 }

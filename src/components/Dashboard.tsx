@@ -15,7 +15,9 @@ import {
   Tabs,
   Tab,
   Fab,
-  Tooltip
+  Tooltip,
+  Chip,
+  CircularProgress
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
@@ -30,10 +32,8 @@ import {
   WhatsApp as WhatsAppIcon,
   Science as ScienceIcon
 } from '@mui/icons-material';
-import { useDropzone } from 'react-dropzone';
+import { FileWithPath, useDropzone } from 'react-dropzone';
 import { toast } from 'react-toastify';
-
-import StatsCards from './StatsCards';
 import ClientsList from './ClientsList';
 import MessagePreview from './MessagePreview';
 import Settings from './Settings';
@@ -67,6 +67,8 @@ const Dashboard: React.FC = () => {
   const [progressMessage, setProgressMessage] = useState('');
   const [clients, setClients] = useState<any[]>([]);
   const [selectedClient, setSelectedClient] = useState<any>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<string | null>(null);
   const [stats, setStats] = useState({
     total: 0,
     enviados: 0,
@@ -85,18 +87,121 @@ const Dashboard: React.FC = () => {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
       'application/vnd.ms-excel': ['.xls']
     },
-    onDrop: async (files) => {
+    onDrop: async (files: FileWithPath[]) => {
+      console.log('📄 Archivo soltado en Dropzone:', files);
+      
       if (files.length > 0) {
         const file = files[0];
-        // Enviar al proceso principal para importar
+        console.log('📄 Archivo:', file.name, 'Tamaño:', file.size);
+        
         if (window.electronAPI) {
-          // Simular importación
-          toast.info(`Importando archivo: ${file.name}`);
-          // Aquí se implementaría la lógica real de importación
+          setIsImporting(true);
+          toast.info(`📂 Procesando archivo: ${file.name}`);
+          
+          // TIMEOUT: Si pasa más de 30 segundos, mostrar error
+          const timeoutId = setTimeout(() => {
+            if (isImporting) {
+              setIsImporting(false);
+              toast.error('⏱️ El procesamiento está tomando demasiado tiempo');
+            }
+          }, 30000);
+        
+          try {
+            // Leer el archivo como ArrayBuffer
+            const arrayBuffer = await file.arrayBuffer();
+            
+            // Convertir a base64
+            const uint8Array = new Uint8Array(arrayBuffer);
+            let binary = '';
+            for (let i = 0; i < uint8Array.length; i++) {
+              binary += String.fromCharCode(uint8Array[i]);
+            }
+            const base64 = btoa(binary);
+            
+            console.log('📤 Enviando archivo al main process...');
+            console.log('📊 Tamaño base64:', base64.length);
+            
+            // Enviar al proceso principal
+            window.electronAPI.send('import-excel-data', {
+              fileName: file.name,
+              fileData: base64
+            });
+
+            // Limpiar timeout
+            clearTimeout(timeoutId);
+        
+          } catch (error) {
+            console.error('❌ Error al leer el archivo:', error);
+            toast.error('Error al leer el archivo');
+            setIsImporting(false);
+            // Limpiar timeout
+            clearTimeout(timeoutId);
+          }
+        } else {
+          console.error('❌ electronAPI no disponible');
+          toast.error('API no disponible');
         }
       }
     }
   });
+
+  // Escuchar el evento import-complete
+  useEffect(() => {
+      console.log('🔍 Dashboard mounted');
+      console.log('📡 window.electronAPI disponible:', !!window.electronAPI);
+      
+      if (!window.electronAPI) {
+          console.error('❌ electronAPI NO disponible');
+          return;
+      }
+
+      // Registrar listener para import-complete
+      window.electronAPI.on('import-complete', (data) => {
+          console.log('🎉 ===== import-complete RECIBIDO =====');
+          console.log('📊 Datos:', {
+              fileName: data.fileName,
+              tipo: data.tipo,
+              total: data.total,
+              primerCliente: data.clientes?.[0]
+          });
+          
+          if (!data || !data.clientes) {
+              console.error('❌ Datos inválidos');
+              toast.error('Datos inválidos recibidos');
+              return;
+          }
+
+          // Actualizar el estado
+          setUploadedFile(data.fileName);
+          setClients(data.clientes);
+          setStats({
+              total: data.clientes.length,
+              enviados: 0,
+              fallidos: 0,
+              pendientes: data.clientes.length
+          });
+          
+          setIsImporting(false);
+          
+          // Mostrar mensaje de éxito con detalles
+          const tipoTexto = data.tipo === 'vacunas' ? 'Vacunas' : 'Citas';
+          toast.success(`✅ ${data.clientes.length} clientes de ${tipoTexto} importados de ${data.fileName}`);
+          
+          console.log('✅ Estado actualizado correctamente');
+      });
+
+      // Registrar listener para errores
+      window.electronAPI.on('app-error', (message) => {
+          console.log('❌ app-error recibido:', message);
+          setIsImporting(false);
+          toast.error(message);
+      });
+
+      // Solicitar configuración
+      console.log('📤 Solicitando configuración...');
+      window.electronAPI.send('get-config');
+      
+  }, []);
 
   // Cargar datos iniciales
   useEffect(() => {
@@ -204,11 +309,8 @@ const Dashboard: React.FC = () => {
         }}
       >
         <Container maxWidth="xl" sx={{ py: 3 }}>
-          {/* Stats Cards */}
-          <StatsCards stats={stats} />
-
           {/* Dropzone */}
-          <Paper sx={{ p: 3, mb: 3, mt: 3 }} {...getRootProps()}>
+          <Paper sx={{ p: 3, mb: 3 }} {...getRootProps()}>
             <input {...getInputProps()} />
             <Box sx={{ textAlign: 'center' }}>
               <CloudUploadIcon sx={{ fontSize: 48, color: '#25D366', mb: 2 }} />
@@ -218,6 +320,19 @@ const Dashboard: React.FC = () => {
               <Typography variant="body2" color="textSecondary">
                 Soporta archivos .xlsx y .xls
               </Typography>
+              {isImporting && (
+                <Box sx={{ mt: 2 }}>
+                  <CircularProgress size={24} />
+                  <Typography variant="body2">Cargando archivo...</Typography>
+                </Box>
+              )}
+              {uploadedFile && !isImporting && (
+                <Chip 
+                  label={`Archivo: ${uploadedFile}`} 
+                  color="success" 
+                  sx={{ mt: 2 }}
+                />
+              )}
             </Box>
           </Paper>
 

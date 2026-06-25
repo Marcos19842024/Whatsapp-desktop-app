@@ -47,16 +47,29 @@ class RemindersData {
 
     // Procesar datos de Excel según el tipo
     procesarDatos(datos: any[][], tipo: 'vacunas' | 'citas'): Cliente[] {
+        console.log(`🔍 RemindersData.procesarDatos - Tipo: ${tipo}`);
+        console.log(`📊 Datos recibidos: ${datos?.length || 0} filas`);
+    
         if (!datos || datos.length === 0) {
+            console.warn('⚠️ No hay datos para procesar');
             return [];
         }
 
+        console.log('📋 Encabezados:', datos[0]);
+        
         if (tipo === 'vacunas') {
-            return this.procesarVacunas(datos);
+            console.log('🔄 Procesando VACUNAS...');
+            const result = this.procesarVacunas(datos);
+            console.log(`✅ Vacunas procesadas: ${result.length} clientes`);
+            return result;
         } else if (tipo === 'citas') {
-            return this.procesarCitas(datos);
+            console.log('🔄 Procesando CITAS...');
+            const result = this.procesarCitas(datos);
+            console.log(`✅ Citas procesadas: ${result.length} clientes`);
+            return result;
         }
 
+        console.warn('⚠️ Tipo no reconocido:', tipo);
         return [];
     }
 

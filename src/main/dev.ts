@@ -1,4 +1,3 @@
-// src/main/dev.ts - Solo para desarrollo en Mac
 import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
 

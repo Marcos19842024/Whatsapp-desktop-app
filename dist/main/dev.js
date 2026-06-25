@@ -33,7 +33,6 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-// src/main/dev.ts - Solo para desarrollo en Mac
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
 let win = null;

@@ -9,7 +9,6 @@ const material_1 = require("@mui/material");
 const icons_material_1 = require("@mui/icons-material");
 const react_dropzone_1 = require("react-dropzone");
 const react_toastify_1 = require("react-toastify");
-const StatsCards_1 = __importDefault(require("./StatsCards"));
 const ClientsList_1 = __importDefault(require("./ClientsList"));
 const MessagePreview_1 = __importDefault(require("./MessagePreview"));
 const Settings_1 = __importDefault(require("./Settings"));
@@ -25,6 +24,8 @@ const Dashboard = () => {
     const [progressMessage, setProgressMessage] = (0, react_1.useState)('');
     const [clients, setClients] = (0, react_1.useState)([]);
     const [selectedClient, setSelectedClient] = (0, react_1.useState)(null);
+    const [isImporting, setIsImporting] = (0, react_1.useState)(false);
+    const [uploadedFile, setUploadedFile] = (0, react_1.useState)(null);
     const [stats, setStats] = (0, react_1.useState)({
         total: 0,
         enviados: 0,
@@ -43,17 +44,102 @@ const Dashboard = () => {
             'application/vnd.ms-excel': ['.xls']
         },
         onDrop: async (files) => {
+            console.log('📄 Archivo soltado en Dropzone:', files);
             if (files.length > 0) {
                 const file = files[0];
-                // Enviar al proceso principal para importar
+                console.log('📄 Archivo:', file.name, 'Tamaño:', file.size);
                 if (window.electronAPI) {
-                    // Simular importación
-                    react_toastify_1.toast.info(`Importando archivo: ${file.name}`);
-                    // Aquí se implementaría la lógica real de importación
+                    setIsImporting(true);
+                    react_toastify_1.toast.info(`📂 Procesando archivo: ${file.name}`);
+                    // TIMEOUT: Si pasa más de 30 segundos, mostrar error
+                    const timeoutId = setTimeout(() => {
+                        if (isImporting) {
+                            setIsImporting(false);
+                            react_toastify_1.toast.error('⏱️ El procesamiento está tomando demasiado tiempo');
+                        }
+                    }, 30000);
+                    try {
+                        // Leer el archivo como ArrayBuffer
+                        const arrayBuffer = await file.arrayBuffer();
+                        // Convertir a base64
+                        const uint8Array = new Uint8Array(arrayBuffer);
+                        let binary = '';
+                        for (let i = 0; i < uint8Array.length; i++) {
+                            binary += String.fromCharCode(uint8Array[i]);
+                        }
+                        const base64 = btoa(binary);
+                        console.log('📤 Enviando archivo al main process...');
+                        console.log('📊 Tamaño base64:', base64.length);
+                        // Enviar al proceso principal
+                        window.electronAPI.send('import-excel-data', {
+                            fileName: file.name,
+                            fileData: base64
+                        });
+                        // Limpiar timeout
+                        clearTimeout(timeoutId);
+                    }
+                    catch (error) {
+                        console.error('❌ Error al leer el archivo:', error);
+                        react_toastify_1.toast.error('Error al leer el archivo');
+                        setIsImporting(false);
+                        // Limpiar timeout
+                        clearTimeout(timeoutId);
+                    }
+                }
+                else {
+                    console.error('❌ electronAPI no disponible');
+                    react_toastify_1.toast.error('API no disponible');
                 }
             }
         }
     });
+    // Escuchar el evento import-complete
+    (0, react_1.useEffect)(() => {
+        console.log('🔍 Dashboard mounted');
+        console.log('📡 window.electronAPI disponible:', !!window.electronAPI);
+        if (!window.electronAPI) {
+            console.error('❌ electronAPI NO disponible');
+            return;
+        }
+        // Registrar listener para import-complete
+        window.electronAPI.on('import-complete', (data) => {
+            console.log('🎉 ===== import-complete RECIBIDO =====');
+            console.log('📊 Datos:', {
+                fileName: data.fileName,
+                tipo: data.tipo,
+                total: data.total,
+                primerCliente: data.clientes?.[0]
+            });
+            if (!data || !data.clientes) {
+                console.error('❌ Datos inválidos');
+                react_toastify_1.toast.error('Datos inválidos recibidos');
+                return;
+            }
+            // Actualizar el estado
+            setUploadedFile(data.fileName);
+            setClients(data.clientes);
+            setStats({
+                total: data.clientes.length,
+                enviados: 0,
+                fallidos: 0,
+                pendientes: data.clientes.length
+            });
+            setIsImporting(false);
+            // Mostrar mensaje de éxito con detalles
+            const tipoTexto = data.tipo === 'vacunas' ? 'Vacunas' : 'Citas';
+            react_toastify_1.toast.success(`✅ ${data.clientes.length} clientes de ${tipoTexto} importados de ${data.fileName}`);
+            console.log('✅ Estado actualizado correctamente');
+        });
+        // Registrar listener para errores
+        window.electronAPI.on('app-error', (message) => {
+            console.log('❌ app-error recibido:', message);
+            setIsImporting(false);
+            react_toastify_1.toast.error(message);
+        });
+        // Solicitar configuración
+        console.log('📤 Solicitando configuración...');
+        window.electronAPI.send('get-config');
+    }, []);
     // Cargar datos iniciales
     (0, react_1.useEffect)(() => {
         if (window.electronAPI) {
@@ -126,7 +212,7 @@ const Dashboard = () => {
                     height: '100vh',
                     overflow: 'auto',
                     bgcolor: 'background.default'
-                }, children: (0, jsx_runtime_1.jsxs)(material_1.Container, { maxWidth: "xl", sx: { py: 3 }, children: [(0, jsx_runtime_1.jsx)(StatsCards_1.default, { stats: stats }), (0, jsx_runtime_1.jsxs)(material_1.Paper, { sx: { p: 3, mb: 3, mt: 3 }, ...getRootProps(), children: [(0, jsx_runtime_1.jsx)("input", { ...getInputProps() }), (0, jsx_runtime_1.jsxs)(material_1.Box, { sx: { textAlign: 'center' }, children: [(0, jsx_runtime_1.jsx)(icons_material_1.CloudUpload, { sx: { fontSize: 48, color: '#25D366', mb: 2 } }), (0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "h6", children: isDragActive ? 'Suelta el archivo aquí' : 'Arrastra o haz clic para importar Excel' }), (0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "body2", color: "textSecondary", children: "Soporta archivos .xlsx y .xls" })] })] }), isProcessing && ((0, jsx_runtime_1.jsxs)(material_1.Box, { sx: { mb: 3 }, children: [(0, jsx_runtime_1.jsx)(material_1.LinearProgress, { variant: "determinate", value: progress }), (0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "body2", color: "textSecondary", sx: { mt: 1 }, children: progressMessage })] })), (0, jsx_runtime_1.jsxs)(material_1.Tabs, { value: tabValue, onChange: (e, v) => setTabValue(v), sx: { mb: 3 }, children: [(0, jsx_runtime_1.jsx)(material_1.Tab, { label: "Dashboard", icon: (0, jsx_runtime_1.jsx)(icons_material_1.Dashboard, {}) }), (0, jsx_runtime_1.jsx)(material_1.Tab, { label: `Clientes (${stats.total})`, icon: (0, jsx_runtime_1.jsx)(icons_material_1.People, {}) }), (0, jsx_runtime_1.jsx)(material_1.Tab, { label: "Mensajes", icon: (0, jsx_runtime_1.jsx)(icons_material_1.Message, {}) }), (0, jsx_runtime_1.jsx)(material_1.Tab, { label: "Logs", icon: (0, jsx_runtime_1.jsx)(icons_material_1.History, {}) }), (0, jsx_runtime_1.jsx)(material_1.Tab, { label: "Configuraci\u00F3n", icon: (0, jsx_runtime_1.jsx)(icons_material_1.Settings, {}) })] }), (0, jsx_runtime_1.jsx)(TabPanel, { value: tabValue, index: 0, children: (0, jsx_runtime_1.jsxs)(material_1.Grid, { container: true, spacing: 3, children: [(0, jsx_runtime_1.jsx)(material_1.Grid, { item: true, xs: 12, md: 6, children: (0, jsx_runtime_1.jsxs)(material_1.Paper, { sx: { p: 3 }, children: [(0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "h6", gutterBottom: true, children: "Acciones R\u00E1pidas" }), (0, jsx_runtime_1.jsxs)(material_1.Box, { sx: { display: 'flex', flexDirection: 'column', gap: 2 }, children: [(0, jsx_runtime_1.jsx)(material_1.Button, { variant: "contained", color: "primary", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Science, {}), onClick: () => window.electronAPI?.send('simulate-citas', {}), disabled: isProcessing, fullWidth: true, children: "\uD83D\uDD2C Enviar Recordatorios de Citas (prueba)" }), (0, jsx_runtime_1.jsx)(material_1.Button, { variant: "contained", color: "secondary", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Science, {}), onClick: () => window.electronAPI?.send('simulate-vacunas', {}), disabled: isProcessing, fullWidth: true, children: "\uD83D\uDD2C Enviar Recordatorios de Vacunas (prueba)" }), (0, jsx_runtime_1.jsx)(material_1.Button, { variant: "contained", color: "primary", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Send, {}), onClick: handleSendCitas, disabled: isProcessing, fullWidth: true, children: "Enviar Recordatorios de Citas" }), (0, jsx_runtime_1.jsx)(material_1.Button, { variant: "contained", color: "secondary", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Send, {}), onClick: handleSendVacunas, disabled: isProcessing, fullWidth: true, children: "Enviar Recordatorios de Vacunas" }), (0, jsx_runtime_1.jsx)(material_1.Button, { variant: "outlined", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Download, {}), onClick: () => {
+                }, children: (0, jsx_runtime_1.jsxs)(material_1.Container, { maxWidth: "xl", sx: { py: 3 }, children: [(0, jsx_runtime_1.jsxs)(material_1.Paper, { sx: { p: 3, mb: 3 }, ...getRootProps(), children: [(0, jsx_runtime_1.jsx)("input", { ...getInputProps() }), (0, jsx_runtime_1.jsxs)(material_1.Box, { sx: { textAlign: 'center' }, children: [(0, jsx_runtime_1.jsx)(icons_material_1.CloudUpload, { sx: { fontSize: 48, color: '#25D366', mb: 2 } }), (0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "h6", children: isDragActive ? 'Suelta el archivo aquí' : 'Arrastra o haz clic para importar Excel' }), (0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "body2", color: "textSecondary", children: "Soporta archivos .xlsx y .xls" }), isImporting && ((0, jsx_runtime_1.jsxs)(material_1.Box, { sx: { mt: 2 }, children: [(0, jsx_runtime_1.jsx)(material_1.CircularProgress, { size: 24 }), (0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "body2", children: "Cargando archivo..." })] })), uploadedFile && !isImporting && ((0, jsx_runtime_1.jsx)(material_1.Chip, { label: `Archivo: ${uploadedFile}`, color: "success", sx: { mt: 2 } }))] })] }), isProcessing && ((0, jsx_runtime_1.jsxs)(material_1.Box, { sx: { mb: 3 }, children: [(0, jsx_runtime_1.jsx)(material_1.LinearProgress, { variant: "determinate", value: progress }), (0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "body2", color: "textSecondary", sx: { mt: 1 }, children: progressMessage })] })), (0, jsx_runtime_1.jsxs)(material_1.Tabs, { value: tabValue, onChange: (e, v) => setTabValue(v), sx: { mb: 3 }, children: [(0, jsx_runtime_1.jsx)(material_1.Tab, { label: "Dashboard", icon: (0, jsx_runtime_1.jsx)(icons_material_1.Dashboard, {}) }), (0, jsx_runtime_1.jsx)(material_1.Tab, { label: `Clientes (${stats.total})`, icon: (0, jsx_runtime_1.jsx)(icons_material_1.People, {}) }), (0, jsx_runtime_1.jsx)(material_1.Tab, { label: "Mensajes", icon: (0, jsx_runtime_1.jsx)(icons_material_1.Message, {}) }), (0, jsx_runtime_1.jsx)(material_1.Tab, { label: "Logs", icon: (0, jsx_runtime_1.jsx)(icons_material_1.History, {}) }), (0, jsx_runtime_1.jsx)(material_1.Tab, { label: "Configuraci\u00F3n", icon: (0, jsx_runtime_1.jsx)(icons_material_1.Settings, {}) })] }), (0, jsx_runtime_1.jsx)(TabPanel, { value: tabValue, index: 0, children: (0, jsx_runtime_1.jsxs)(material_1.Grid, { container: true, spacing: 3, children: [(0, jsx_runtime_1.jsx)(material_1.Grid, { item: true, xs: 12, md: 6, children: (0, jsx_runtime_1.jsxs)(material_1.Paper, { sx: { p: 3 }, children: [(0, jsx_runtime_1.jsx)(material_1.Typography, { variant: "h6", gutterBottom: true, children: "Acciones R\u00E1pidas" }), (0, jsx_runtime_1.jsxs)(material_1.Box, { sx: { display: 'flex', flexDirection: 'column', gap: 2 }, children: [(0, jsx_runtime_1.jsx)(material_1.Button, { variant: "contained", color: "primary", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Science, {}), onClick: () => window.electronAPI?.send('simulate-citas', {}), disabled: isProcessing, fullWidth: true, children: "\uD83D\uDD2C Enviar Recordatorios de Citas (prueba)" }), (0, jsx_runtime_1.jsx)(material_1.Button, { variant: "contained", color: "secondary", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Science, {}), onClick: () => window.electronAPI?.send('simulate-vacunas', {}), disabled: isProcessing, fullWidth: true, children: "\uD83D\uDD2C Enviar Recordatorios de Vacunas (prueba)" }), (0, jsx_runtime_1.jsx)(material_1.Button, { variant: "contained", color: "primary", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Send, {}), onClick: handleSendCitas, disabled: isProcessing, fullWidth: true, children: "Enviar Recordatorios de Citas" }), (0, jsx_runtime_1.jsx)(material_1.Button, { variant: "contained", color: "secondary", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Send, {}), onClick: handleSendVacunas, disabled: isProcessing, fullWidth: true, children: "Enviar Recordatorios de Vacunas" }), (0, jsx_runtime_1.jsx)(material_1.Button, { variant: "outlined", startIcon: (0, jsx_runtime_1.jsx)(icons_material_1.Download, {}), onClick: () => {
                                                                 if (window.electronAPI) {
                                                                     window.electronAPI.send('export-report', { clientes: clients });
                                                                 }

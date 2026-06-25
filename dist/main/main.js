@@ -54,7 +54,22 @@ else {
     console.log('   WHATSAPP_PHONE_NUMBER_ID:', process.env.WHATSAPP_PHONE_NUMBER_ID ? '****' : 'No definido');
 }
 // Configurar handlers IPC
+console.log('🔧 Llamando a setupIPCHandlers...');
 (0, ipcHandlers_1.setupIPCHandlers)();
+console.log('✅ setupIPCHandlers completado');
+console.log('🔧 Registrando manejadores de respaldo...');
+electron_1.ipcMain.on('test-ipc', (event) => {
+    console.log('🎯 test-ipc recibido');
+    event.reply('test-response', { message: 'IPC funcionando' });
+});
+electron_1.ipcMain.on('get-config-direct', (event) => {
+    console.log('🎯 get-config-direct recibido');
+    event.reply('config-loaded', {
+        nombreClinica: process.env.NOMBRE_CLINICA || 'Clínica',
+        test: 'funcionando'
+    });
+});
+console.log('✅ Manejadores de respaldo registrados');
 let mainWindow = null;
 // Función para obtener la ruta correcta según el SO
 function getAssetPath(relativePath) {

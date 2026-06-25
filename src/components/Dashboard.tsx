@@ -9,20 +9,13 @@ import {
   AppBar,
   Toolbar,
   IconButton,
-  Drawer,
-  List,
-  ListItem,
-  ListItemIcon,
-  ListItemText,
-  Divider,
   LinearProgress,
   Alert,
   Snackbar,
   Tabs,
   Tab,
   Fab,
-  Tooltip,
-  Badge
+  Tooltip
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
@@ -30,12 +23,10 @@ import {
   Message as MessageIcon,
   Settings as SettingsIcon,
   History as HistoryIcon,
-  Menu as MenuIcon,
   CloudUpload as CloudUploadIcon,
   Send as SendIcon,
   Refresh as RefreshIcon,
   Download as DownloadIcon,
-  Notifications as NotificationsIcon,
   WhatsApp as WhatsAppIcon,
   Science as ScienceIcon
 } from '@mui/icons-material';
@@ -71,7 +62,6 @@ function TabPanel(props: TabPanelProps) {
 
 const Dashboard: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
@@ -189,23 +179,10 @@ const Dashboard: React.FC = () => {
       {/* App Bar */}
       <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
         <Toolbar>
-          <IconButton
-            color="inherit"
-            edge="start"
-            onClick={() => setDrawerOpen(true)}
-            sx={{ mr: 2 }}
-          >
-            <MenuIcon />
-          </IconButton>
-          
           <WhatsAppIcon sx={{ mr: 2 }} />
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             WhatsApp Reminder System
           </Typography>
-
-          <Badge badgeContent={stats.pendientes} color="error">
-            <NotificationsIcon sx={{ mr: 2 }} />
-          </Badge>
 
           <Tooltip title="Actualizar">
             <IconButton color="inherit" onClick={handleRefresh}>
@@ -214,41 +191,6 @@ const Dashboard: React.FC = () => {
           </Tooltip>
         </Toolbar>
       </AppBar>
-
-      {/* Drawer */}
-      <Drawer
-        anchor="left"
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-      >
-        <Box sx={{ width: 250, mt: 8 }}>
-          <List>
-            <ListItem button selected={tabValue === 0} onClick={() => { setTabValue(0); setDrawerOpen(false); }}>
-              <ListItemIcon><DashboardIcon /></ListItemIcon>
-              <ListItemText primary="Dashboard" />
-            </ListItem>
-            <ListItem button selected={tabValue === 1} onClick={() => { setTabValue(1); setDrawerOpen(false); }}>
-              <ListItemIcon><PeopleIcon /></ListItemIcon>
-              <ListItemText primary="Clientes" />
-            </ListItem>
-            <ListItem button selected={tabValue === 2} onClick={() => { setTabValue(2); setDrawerOpen(false); }}>
-              <ListItemIcon><MessageIcon /></ListItemIcon>
-              <ListItemText primary="Mensajes" />
-            </ListItem>
-            <ListItem button selected={tabValue === 3} onClick={() => { setTabValue(3); setDrawerOpen(false); }}>
-              <ListItemIcon><HistoryIcon /></ListItemIcon>
-              <ListItemText primary="Logs" />
-            </ListItem>
-          </List>
-          <Divider />
-          <List>
-            <ListItem button selected={tabValue === 4} onClick={() => { setTabValue(4); setDrawerOpen(false); }}>
-              <ListItemIcon><SettingsIcon /></ListItemIcon>
-              <ListItemText primary="Configuración" />
-            </ListItem>
-          </List>
-        </Box>
-      </Drawer>
 
       {/* Main Content */}
       <Box
@@ -291,11 +233,11 @@ const Dashboard: React.FC = () => {
 
           {/* Tabs */}
           <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} sx={{ mb: 3 }}>
-            <Tab label="Dashboard" />
-            <Tab label={`Clientes (${stats.total})`} />
-            <Tab label="Mensajes" />
-            <Tab label="Logs" />
-            <Tab label="Configuración" />
+            <Tab label="Dashboard" icon={<DashboardIcon />} />
+            <Tab label={`Clientes (${stats.total})`} icon={<PeopleIcon />} />
+            <Tab label="Mensajes" icon={<MessageIcon />} />
+          <Tab label="Logs" icon={<HistoryIcon />} />
+            <Tab label="Configuración" icon={<SettingsIcon />} />
           </Tabs>
 
           {/* Tab Panels */}
@@ -310,6 +252,28 @@ const Dashboard: React.FC = () => {
                     <Button
                       variant="contained"
                       color="primary"
+                      startIcon={<ScienceIcon />}
+                      onClick={() => window.electronAPI?.send('simulate-citas', {})}
+                      disabled={isProcessing}
+                      fullWidth
+                    >
+                      🔬 Enviar Recordatorios de Citas (prueba)
+                    </Button>
+
+                    <Button
+                      variant="contained"
+                      color="secondary"
+                      startIcon={<ScienceIcon />}
+                      onClick={() => window.electronAPI?.send('simulate-vacunas', {})}
+                      disabled={isProcessing}
+                      fullWidth
+                    >
+                      🔬 Enviar Recordatorios de Vacunas (prueba)
+                    </Button>
+
+                    <Button
+                      variant="contained"
+                      color="primary"
                       startIcon={<SendIcon />}
                       onClick={handleSendCitas}
                       disabled={isProcessing}
@@ -317,6 +281,7 @@ const Dashboard: React.FC = () => {
                     >
                       Enviar Recordatorios de Citas
                     </Button>
+
                     <Button
                       variant="contained"
                       color="secondary"
@@ -327,6 +292,7 @@ const Dashboard: React.FC = () => {
                     >
                       Enviar Recordatorios de Vacunas
                     </Button>
+
                     <Button
                       variant="outlined"
                       startIcon={<DownloadIcon />}
@@ -455,29 +421,6 @@ const Dashboard: React.FC = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
-
-      // Botones de prueba de simulación
-      <Button
-        variant="outlined"
-        color="warning"
-        startIcon={<ScienceIcon />}
-        onClick={() => window.electronAPI?.send('simulate-citas', {})}
-        disabled={isProcessing}
-        fullWidth
-      >
-        🔬 SIMULAR Citas
-      </Button>
-
-      <Button
-        variant="outlined"
-        color="warning"
-        startIcon={<ScienceIcon />}
-        onClick={() => window.electronAPI?.send('simulate-vacunas', {})}
-        disabled={isProcessing}
-        fullWidth
-      >
-        🔬 SIMULAR Vacunas
-      </Button>
     </Box>
   );
 };
